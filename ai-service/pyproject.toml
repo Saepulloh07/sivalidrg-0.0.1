@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=45"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "medcoder"
+version = "0.1.0"
+dependencies = [
+    "sqlalchemy",
+    "pymysql",
+    "python-dotenv"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]

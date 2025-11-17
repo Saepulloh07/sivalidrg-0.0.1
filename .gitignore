@@ -1,0 +1,215 @@
+# =========================================================
+# SYSTEM & OS FILES
+# =========================================================
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Icon?
+desktop.ini
+
+# =========================================================
+# NODE.JS / JAVASCRIPT PROJECTS
+# =========================================================
+# Node modules & logs
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Build output
+dist/
+build/
+.cache/
+.next/
+out/
+coverage/
+.tmp/
+.temp/
+.vscode/
+.idea/
+*.tsbuildinfo
+
+# Dependency directories
+jspm_packages/
+bower_components/
+
+# =========================================================
+# PYTHON PROJECTS (if using scripts for backend/AI)
+# =========================================================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.env/
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Python build files
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Test & coverage
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# =========================================================
+# DATABASE & DATA FILES
+# =========================================================
+*.sqlite3
+*.db
+*.sql
+*.bak
+*.csv
+*.json
+*.xml
+uploads/
+data/
+storage/
+backup/
+
+# =========================================================
+# STRAPI SPECIFIC
+# =========================================================
+# Build & temporary folders
+.build/
+.export/
+.strapi/
+public/uploads/
+tmp/
+logs/
+.log
+
+# =========================================================
+# REACT / FRONTEND
+# =========================================================
+# Build outputs
+/build
+/.parcel-cache
+/.vercel
+/.netlify
+/.cache
+/.eslintcache
+
+# Local testing
+*.local
+*.log
+*.lock
+
+# =========================================================
+# VISUAL STUDIO CODE / JETBRAINS IDE
+# =========================================================
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.iml
+
+# =========================================================
+# MAC & WINDOWS SYSTEM FILES
+# =========================================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# =========================================================
+# MISC
+# =========================================================
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Lock files (optional)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Temporary or generated files
+temp/
+tmp/
+.cache/
+.cache-loader/
+*.tmp
+*.swp
+*.swo
+*.bak
+*.orig
+*.rej
+*.pid
+*.seed
+*.pid.lock
+
+# =========================================================
+# DOCKER (if used)
+# =========================================================
+docker-compose.override.yml
+*.pid
+*.seed
+*.pid.lock
+Dockerfile*
+.dockerignore
+
+# =========================================================
+# TESTING / CI
+# =========================================================
+coverage/
+nyc_output/
+.vscode-test/
+test-results/
+junit.xml
