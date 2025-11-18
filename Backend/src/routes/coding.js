@@ -1,4 +1,4 @@
-// src/routes/coding.js
+// src/routes/coding.js - COMPLETE MODIFIED VERSION
 const express = require("express");
 const axios = require("axios");
 const { body, validationResult } = require("express-validator");
@@ -97,10 +97,9 @@ router.get("/cases", async (req, res) => {
       query(countSql, countParams),
     ]);
 
-    // Add stuck detection flag to each case
     const casesWithStuckFlag = cases.map((c) => ({
       ...c,
-      is_stuck: c.status === "ai_processing" && c.seconds_since_update > 600, // 10 minutes
+      is_stuck: c.status === "ai_processing" && c.seconds_since_update > 600,
     }));
 
     res.json({
@@ -131,7 +130,6 @@ router.get("/cases/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
-    // === 1. Get coding case detail ===
     const sql = `
       SELECT 
         cc.id,
@@ -171,7 +169,6 @@ router.get("/cases/:id", async (req, res) => {
       codingCase.status === "ai_processing" &&
       codingCase.seconds_since_update > 600;
 
-    // === 2. Get AI recommendations ===
     const recommendations = await query(
       `SELECT 
          ar.id,
@@ -185,8 +182,7 @@ router.get("/cases/:id", async (req, res) => {
          ar.highlight_end,
          ar.created_at,
          icd.description AS icd_description,
-         icd.category AS icd_category,
-         icd.subcategory AS icd_subcategory
+         icd.category AS icd_category
        FROM ai_recommendations ar
        LEFT JOIN icd_master icd ON ar.code = icd.code AND ar.code_type = icd.code_type
        WHERE ar.coding_case_id = ?
@@ -194,7 +190,6 @@ router.get("/cases/:id", async (req, res) => {
       [id]
     );
 
-    // === 3. Get final codes ===
     const finalCodes = await query(
       `SELECT 
          fc.id,
@@ -207,8 +202,7 @@ router.get("/cases/:id", async (req, res) => {
          fc.created_at,
          u.name AS added_by_name,
          icd.description AS icd_description,
-         icd.category AS icd_category,
-         icd.subcategory AS icd_subcategory
+         icd.category AS icd_category
        FROM final_codes fc
        LEFT JOIN users u ON fc.added_by = u.id
        LEFT JOIN icd_master icd ON fc.code = icd.code AND fc.code_type = icd.code_type
@@ -217,13 +211,11 @@ router.get("/cases/:id", async (req, res) => {
       [id]
     );
 
-    // === 4. Get checklist ===
     const [checklist] = await query(
       `SELECT * FROM auto_checklists WHERE coding_case_id = ?`,
       [id]
     );
 
-    // === 5. Get mismatch flags (HAPUS JOIN resolved_by) ===
     const mismatchFlags = await query(
       `SELECT 
          mf.id,
@@ -243,7 +235,6 @@ router.get("/cases/:id", async (req, res) => {
       [id]
     );
 
-    // === 6. Response ===
     res.json({
       success: true,
       data: {
@@ -266,14 +257,13 @@ router.get("/cases/:id", async (req, res) => {
 });
 
 /**
- * GET /api/coding/documents/:id/status 🆕
- * Check document status and available actions (proxy to AI service)
+ * GET /api/coding/documents/:id/status
+ * Check document status and available actions
  */
 router.get("/documents/:id/status", async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Verify document exists in our database
     const documents = await query("SELECT * FROM documents WHERE id = ?", [id]);
 
     if (documents.length === 0) {
@@ -283,7 +273,6 @@ router.get("/documents/:id/status", async (req, res) => {
       });
     }
 
-    // Get status from AI service
     try {
       const response = await axios.get(
         `${AI_SERVICE_URL}/api/v1/document/${id}/status`,
@@ -301,7 +290,6 @@ router.get("/documents/:id/status", async (req, res) => {
         timestamp: new Date().toISOString(),
       });
     } catch (aiError) {
-      // If AI service unavailable, return basic status from database
       logger.warn("AI service unavailable for status check, using database", {
         error: aiError.message,
       });
@@ -340,6 +328,7 @@ router.get("/documents/:id/status", async (req, res) => {
 /**
  * POST /api/coding/infer
  * Start AI inference for a document
+ * MODIFIED: Support skip_icd_matching and handle manual entry
  */
 router.post(
   "/infer",
@@ -347,6 +336,10 @@ router.post(
     body("document_id")
       .isInt({ min: 1 })
       .withMessage("Document ID tidak valid"),
+    body("skip_icd_matching")
+      .optional()
+      .isBoolean()
+      .withMessage("skip_icd_matching harus boolean"),
   ],
   async (req, res) => {
     try {
@@ -357,7 +350,8 @@ router.post(
           errors: errors.array(),
         });
       }
-      const { document_id } = req.body;
+
+      const { document_id, skip_icd_matching = false } = req.body;
 
       const documents = await query(
         `SELECT d.*, p.norm, p.name as patient_name
@@ -366,41 +360,85 @@ router.post(
          WHERE d.id = ?`,
         [document_id]
       );
+
       if (documents.length === 0) {
         return res.status(404).json({
           success: false,
           message: "Dokumen tidak ditemukan",
         });
       }
+
       const document = documents[0];
+
       logger.info(
-        `Starting AI inference for document ${document_id}, NoRM: ${document.norm}`
+        `🚀 Starting AI inference for document ${document_id}, NoRM: ${document.norm}, Skip ICD: ${skip_icd_matching}`
       );
 
       try {
         const aiResponse = await axios.post(
           `${AI_SERVICE_URL}/api/v1/infer`,
-          { document_id, run_validation: true },
+          {
+            document_id,
+            run_validation: true,
+            skip_icd_matching,
+          },
           { timeout: AI_TIMEOUT }
         );
+
+        const aiResult = aiResponse.data;
+
+        // MODIFIED: Handle manual_entry_required flag
+        if (
+          aiResult.manual_entry_required ||
+          aiResult.total_recommendations === 0
+        ) {
+          logger.info(
+            `⚠️ No ICD matches for document ${document_id}, manual entry required`
+          );
+          logger.info(
+            `✅ Validation status: ${
+              aiResult.validation_report?.overall_status || "N/A"
+            }`
+          );
+
+          return res.json({
+            success: true,
+            data: aiResult,
+            message:
+              aiResult.message ||
+              "⚠️ No ICD codes matched. Add codes manually. Validation completed.",
+            manual_entry_required: true,
+            validation_completed: Boolean(aiResult.validation_report),
+            priority_message:
+              "🔥 VALIDATION COMPLETED - Please add ICD codes manually",
+          });
+        }
+
+        logger.info(
+          `✅ Inference completed: ${aiResult.total_recommendations} recommendations`
+        );
+
         res.json({
           success: true,
-          data: aiResponse.data,
-          message: "Inference berhasil diproses",
+          data: aiResult,
+          message: aiResult.message || "Inference berhasil diproses",
         });
       } catch (error) {
         if (error.response && error.response.status === 400) {
           const aiError = error.response.data.detail;
+
           if (
             aiError.error === "Document is currently being processed" &&
             aiError.is_stuck
           ) {
             logger.info(`Document ${document_id} is stuck, forcing reprocess`);
+
             const reprocessResponse = await axios.post(
               `${AI_SERVICE_URL}/api/v1/infer/reprocess?force=true`,
-              { document_id, run_validation: true },
+              { document_id, run_validation: true, skip_icd_matching },
               { timeout: AI_TIMEOUT }
             );
+
             return res.json({
               success: true,
               data: reprocessResponse.data,
@@ -414,6 +452,7 @@ router.post(
             });
           }
         }
+
         logger.error("AI inference failed:", error);
         return res.status(error.response?.status || 500).json({
           success: false,
@@ -434,8 +473,9 @@ router.post(
 );
 
 /**
- * POST /api/coding/infer/reprocess 🆕
+ * POST /api/coding/infer/reprocess
  * Re-process document (AI Service v1.1 feature)
+ * MODIFIED: Add skip_icd_matching parameter
  */
 router.post(
   "/infer/reprocess",
@@ -444,6 +484,7 @@ router.post(
       .isInt({ min: 1 })
       .withMessage("Document ID tidak valid"),
     body("run_validation").optional().isBoolean(),
+    body("skip_icd_matching").optional().isBoolean(),
   ],
   async (req, res) => {
     try {
@@ -455,10 +496,14 @@ router.post(
         });
       }
 
-      const { document_id, run_validation = true } = req.body;
+      const {
+        document_id,
+        run_validation = true,
+        skip_icd_matching = false,
+      } = req.body;
+
       const force = req.query.force === "true";
 
-      // Verify document exists
       const documents = await query(
         `SELECT d.*, p.norm 
          FROM documents d
@@ -477,11 +522,10 @@ router.post(
       const document = documents[0];
 
       logger.info(
-        `Reprocessing document ${document_id}, NoRM: ${document.norm}, Force: ${force}`
+        `🔄 Reprocessing document ${document_id}, NoRM: ${document.norm}, Force: ${force}, Skip ICD: ${skip_icd_matching}`
       );
 
       try {
-        // Call AI service reprocess endpoint
         const response = await axios.post(
           `${AI_SERVICE_URL}/api/v1/infer/reprocess${
             force ? "?force=true" : ""
@@ -489,6 +533,7 @@ router.post(
           {
             document_id: parseInt(document_id),
             run_validation: Boolean(run_validation),
+            skip_icd_matching: Boolean(skip_icd_matching),
           },
           {
             timeout: AI_TIMEOUT,
@@ -501,12 +546,12 @@ router.post(
         const aiResult = response.data;
 
         logger.info(
-          `Reprocess completed for document ${document_id}. ` +
+          `✅ Reprocess completed for document ${document_id}. ` +
             `Coding case: ${aiResult.coding_case_id}, ` +
-            `Recommendations: ${aiResult.total_recommendations}`
+            `Recommendations: ${aiResult.total_recommendations}, ` +
+            `Manual entry: ${aiResult.manual_entry_required || false}`
         );
 
-        // Update document status
         await query("UPDATE documents SET status = ? WHERE id = ?", [
           aiResult.status || "ai_completed",
           document_id,
@@ -516,16 +561,10 @@ router.post(
           success: true,
           message: "Dokumen berhasil diproses ulang",
           data: {
-            coding_case_id: aiResult.coding_case_id,
-            document_id: aiResult.document_id,
-            total_recommendations: aiResult.total_recommendations,
-            ai_recommendations: aiResult.results || [],
-            validation_report: aiResult.validation_report || null,
-            inference_time: aiResult.inference_time,
-            status: aiResult.status,
-            has_validation: Boolean(aiResult.validation_report),
+            ...aiResult,
             reprocessed: true,
             forced: force,
+            manual_entry_required: aiResult.manual_entry_required || false,
           },
         });
       } catch (aiError) {
@@ -539,30 +578,13 @@ router.post(
           const status = aiError.response.status;
           const errorData = aiError.response.data;
 
-          // Handle 409 Conflict (processing or finalized)
-          if (
-            status === 409 &&
-            errorData.detail &&
-            typeof errorData.detail === "object"
-          ) {
+          if (status === 409) {
             return res.status(409).json({
               success: false,
               message:
-                errorData.detail.message ||
+                errorData.detail?.message ||
                 "Dokumen tidak dapat diproses ulang",
-              error: {
-                ...errorData.detail,
-                backend_suggestion: force
-                  ? "Proses sedang berjalan atau dokumen finalized. Tunggu atau coba lagi."
-                  : "Gunakan force=true untuk memproses ulang",
-              },
-              solutions: {
-                force_reprocess: {
-                  endpoint: "POST /api/coding/infer/reprocess?force=true",
-                  description: "Force reprocess document",
-                  body: { document_id, run_validation },
-                },
-              },
+              error: errorData.detail,
             });
           }
 
@@ -581,7 +603,6 @@ router.post(
           });
         }
 
-        // Network errors
         if (aiError.code === "ECONNREFUSED" || aiError.code === "ETIMEDOUT") {
           return res.status(503).json({
             success: false,
@@ -625,7 +646,6 @@ router.post(
       const { id } = req.params;
       const { assigned_to } = req.body;
 
-      // Verify coding case exists
       const cases = await query("SELECT * FROM coding_cases WHERE id = ?", [
         id,
       ]);
@@ -636,7 +656,6 @@ router.post(
         });
       }
 
-      // Verify user exists and has appropriate role
       const users = await query(
         "SELECT * FROM users WHERE id = ? AND role IN (?, ?) AND is_active = true",
         [assigned_to, "coder", "reviewer"]
@@ -691,7 +710,6 @@ router.post(
       .withMessage("Code type tidak valid"),
     body("description").notEmpty().withMessage("Deskripsi wajib diisi"),
     body("source").isIn(["ai", "manual"]).withMessage("Source tidak valid"),
-    body("ai_recommendation_id").optional().isInt(),
   ],
   async (req, res) => {
     try {
@@ -704,10 +722,8 @@ router.post(
       }
 
       const { id } = req.params;
-      const { code, code_type, description, source, ai_recommendation_id } =
-        req.body;
+      const { code, code_type, description, source } = req.body;
 
-      // Verify coding case exists
       const cases = await query("SELECT * FROM coding_cases WHERE id = ?", [
         id,
       ]);
@@ -718,7 +734,6 @@ router.post(
         });
       }
 
-      // Check if case is finalized
       if (cases[0].status === "finalized") {
         return res.status(400).json({
           success: false,
@@ -727,7 +742,6 @@ router.post(
         });
       }
 
-      // Check if code already exists
       const existing = await query(
         "SELECT id FROM final_codes WHERE coding_case_id = ? AND code = ? AND code_type = ?",
         [id, code, code_type]
@@ -740,7 +754,6 @@ router.post(
         });
       }
 
-      // Verify ICD code exists in master
       const icdCodes = await query(
         "SELECT * FROM icd_master WHERE code = ? AND code_type = ?",
         [code, code_type]
@@ -753,29 +766,19 @@ router.post(
         });
       }
 
-      // Insert final code
       const result = await query(
         `INSERT INTO final_codes 
-        (coding_case_id, code, code_type, description, source, added_by, ai_recommendation_id) 
-        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          id,
-          code,
-          code_type,
-          description,
-          source,
-          req.user.id,
-          ai_recommendation_id || null,
-        ]
+        (coding_case_id, code, code_type, description, source, added_by) 
+        VALUES (?, ?, ?, ?, ?, ?)`,
+        [id, code, code_type, description, source, req.user.id]
       );
 
-      // Update coding case timestamp
       await query("UPDATE coding_cases SET updated_at = NOW() WHERE id = ?", [
         id,
       ]);
 
       logger.info(
-        `Final code added to case ${id}: ${code} (${code_type}) by user ${req.user.id}`
+        `Final code added to case ${id}: ${code} (${code_type}) by user ${req.user.id} - source: ${source}`
       );
 
       res.status(201).json({
@@ -810,7 +813,6 @@ router.delete("/cases/:id/codes/:codeId", async (req, res) => {
   try {
     const { id, codeId } = req.params;
 
-    // Verify code exists and belongs to case
     const codes = await query(
       "SELECT * FROM final_codes WHERE id = ? AND coding_case_id = ?",
       [codeId, id]
@@ -823,7 +825,6 @@ router.delete("/cases/:id/codes/:codeId", async (req, res) => {
       });
     }
 
-    // Check if case is finalized
     const cases = await query("SELECT status FROM coding_cases WHERE id = ?", [
       id,
     ]);
@@ -882,7 +883,6 @@ router.post(
         });
       }
 
-      // Check if there are final codes
       const finalCodes = await query(
         "SELECT COUNT(*) as count FROM final_codes WHERE coding_case_id = ?",
         [id]
@@ -895,13 +895,11 @@ router.post(
         });
       }
 
-      // Update coding case status
       await query(
         "UPDATE coding_cases SET status = ?, finalized_at = NOW(), updated_at = NOW() WHERE id = ?",
         ["finalized", id]
       );
 
-      // Update document status
       await query(
         "UPDATE documents d JOIN coding_cases cc ON d.id = cc.document_id SET d.status = ? WHERE cc.id = ?",
         ["finalized", id]
@@ -931,7 +929,7 @@ router.post(
 
 /**
  * GET /api/coding/icd/search
- * Search ICD codes (semantic search proxy)
+ * Search ICD codes
  */
 router.get("/icd/search", async (req, res) => {
   try {
@@ -945,7 +943,7 @@ router.get("/icd/search", async (req, res) => {
     }
 
     let sql = `
-      SELECT code, code_type, description, category, subcategory
+      SELECT code, code_type, description, category
       FROM icd_master 
       WHERE description LIKE ? OR code LIKE ?
     `;
@@ -1036,7 +1034,7 @@ router.get("/cases/:id/codes", async (req, res) => {
 
     const finalCodes = await query(
       `SELECT fc.*, u.name AS added_by_name, icd.description AS icd_description,
-              icd.category, icd.subcategory
+              icd.category
        FROM final_codes fc
        LEFT JOIN users u ON fc.added_by = u.id
        LEFT JOIN icd_master icd ON fc.code = icd.code AND fc.code_type = icd.code_type

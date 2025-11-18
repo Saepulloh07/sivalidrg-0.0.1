@@ -38,6 +38,8 @@ import {
   Stepper,
   Step,
   StepLabel,
+  FormControlLabel,
+  Checkbox,
 } from "@mui/material";
 import {
   ArrowBack,
@@ -104,6 +106,8 @@ export default function EnhancedCaseDetail() {
   const [editingCode, setEditingCode] = useState(null);
   const [editForm, setEditForm] = useState({});
   const [openGuide, setOpenGuide] = useState(false);
+
+  const [skipIcdMatching, setSkipIcdMatching] = useState(false);
 
   const processSteps = [
     "Checking status",
@@ -252,12 +256,19 @@ export default function EnhancedCaseDetail() {
     }, 1000);
 
     try {
-      const inferRes = await apiClient.post("/api/coding/infer", {
-        document_id: codingCase.document_id,
-        run_validation: runValidation,
-      });
+      const inferRes = await codingAPI.runInference(
+        codingCase.document_id,
+        runValidation,
+        skipIcdMatching // NEW PARAMETER
+      );
 
-      if (!inferRes.data.success) throw new Error(inferRes.data.message);
+      // Handle response dengan manual_entry_required:
+      if (inferRes.data.data.manual_entry_required) {
+        enqueueSnackbar(inferRes.data.message, {
+          variant: "warning",
+          autoHideDuration: 8000,
+        });
+      }
 
       clearInterval(progressInterval);
       setProcessProgress(100);
@@ -313,10 +324,12 @@ export default function EnhancedCaseDetail() {
         ? `/api/coding/infer/reprocess?force=true`
         : `/api/coding/infer/reprocess`;
 
-      const reprocessRes = await apiClient.post(endpoint, {
-        document_id: codingCase.document_id,
-        run_validation: runValidation,
-      });
+      const reprocessRes = await codingAPI.reprocessDocument(
+        codingCase.document_id,
+        runValidation,
+        force,
+        skipIcdMatching // NEW PARAMETER
+      );
 
       if (!reprocessRes.data.success)
         throw new Error(reprocessRes.data.message);
@@ -368,16 +381,29 @@ export default function EnhancedCaseDetail() {
     const code = window.prompt(
       `Masukkan kode ${type === "diagnoses" ? "ICD-10" : "ICD-9-CM"}:`
     );
-    if (!code) return;
+    if (!code?.trim()) return;
+
+    const description = window.prompt("Masukkan deskripsi kode:");
+    if (!description?.trim()) {
+      enqueueSnackbar("Deskripsi wajib diisi", { variant: "warning" });
+      return;
+    }
 
     try {
-      await codingAPI.addCode(id, { type, code });
-      enqueueSnackbar("Kode berhasil ditambahkan", { variant: "success" });
+      await codingAPI.addCode(id, {
+        code: code.trim().toUpperCase(),
+        code_type: type === "diagnoses" ? "diagnosis" : "procedure",
+        description: description.trim(),
+        source: "manual",
+      });
+
+      enqueueSnackbar("Kode manual berhasil ditambahkan", {
+        variant: "success",
+      });
       await loadCaseData();
     } catch (err) {
-      enqueueSnackbar(err.response?.data?.message || "Gagal menambahkan kode", {
-        variant: "error",
-      });
+      console.error("Add code error:", err.response?.data);
+      enqueueSnackbar("Gagal menambahkan kode", { variant: "error" });
     }
   };
 
@@ -397,7 +423,10 @@ export default function EnhancedCaseDetail() {
 
   const startEditCode = (code) => {
     setEditingCode(code.id);
-    setEditForm({ ...code });
+    setEditForm({
+      ...code,
+      source: code.source || "manual",
+    });
   };
 
   const cancelEdit = () => {
@@ -406,17 +435,35 @@ export default function EnhancedCaseDetail() {
   };
 
   const saveEdit = async () => {
+    if (!editForm.code?.trim() || !editForm.description?.trim()) {
+      enqueueSnackbar("Kode dan deskripsi wajib diisi", { variant: "warning" });
+      return;
+    }
+
     try {
       await codingAPI.deleteCode(id, editingCode);
-      await codingAPI.addCode(id, {
-        type: editForm.type,
-        code: editForm.code,
-        description: editForm.description,
-      });
+
+      const payload = {
+        code: editForm.code.trim().toUpperCase(),
+        code_type: editForm.type === "diagnosis" ? "diagnosis" : "procedure",
+        description: editForm.description.trim(),
+        source: "manual",
+        // JANGAN kirim ai_recommendations kecuali memang ada (hanya untuk AI)
+      };
+
+      // Hanya tambahkan ai_recommendations jika memang ada dan bukan null
+      if (editForm.ai_recommendations && editForm.ai_recommendations !== null) {
+        payload.ai_recommendations = editForm.ai_recommendations;
+      }
+
+      await codingAPI.addCode(id, payload);
+
       enqueueSnackbar("Kode berhasil diperbarui", { variant: "success" });
       setEditingCode(null);
+      setEditForm({});
       await loadCaseData();
     } catch (err) {
+      console.error("Edit code error:", err.response?.data);
       enqueueSnackbar("Gagal memperbarui kode", { variant: "error" });
     }
   };
@@ -627,6 +674,15 @@ export default function EnhancedCaseDetail() {
                 </Button>
               </Tooltip>
             )}
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={skipIcdMatching}
+                onChange={(e) => setSkipIcdMatching(e.target.checked)}
+              />
+            }
+            label="Skip ICD Matching (Tambah kode manual)"
+          />
         </Box>
       </Box>
 
@@ -643,6 +699,21 @@ export default function EnhancedCaseDetail() {
           </Typography>
         </Alert>
       )}
+
+      {codingCase.status === "ai_completed" &&
+        codes?.diagnoses?.length === 0 &&
+        codes?.procedures?.length === 0 && (
+          <Alert severity="warning" sx={{ mb: 3 }}>
+            <Typography variant="subtitle2" fontWeight={600}>
+              ⚠️ No ICD Codes Found
+            </Typography>
+            <Typography variant="body2">
+              AI couldn't match ICD codes automatically.
+              <strong>Validation has been completed</strong> - check the
+              "Validasi AI" tab. Add ICD codes manually using the buttons below.
+            </Typography>
+          </Alert>
+        )}
 
       {codingCase.status === "ai_processing" && !isStuck && (
         <Alert

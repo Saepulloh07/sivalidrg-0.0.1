@@ -9,40 +9,77 @@ if (!fs.existsSync(logDir)) {
   fs.mkdirSync(logDir, { recursive: true });
 }
 
-// Define log format
-const logFormat = winston.format.combine(
-  winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
-  winston.format.errors({ stack: true }),
-  winston.format.splat(),
-  winston.format.json()
-);
+// --- SAFE STRINGIFY HANDLER (anti circular) ---
+function safeStringify(obj) {
+  const seen = new WeakSet();
+  return JSON.stringify(
+    obj,
+    (key, value) => {
+      if (typeof value === "object" && value !== null) {
+        if (seen.has(value)) return "[Circular]";
+        seen.add(value);
+      }
+      return value;
+    },
+    2
+  );
+}
 
-// Console format (for development)
+// Formatter untuk console
 const consoleFormat = winston.format.combine(
   winston.format.colorize(),
   winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
   winston.format.printf(({ timestamp, level, message, ...meta }) => {
     let msg = `${timestamp} [${level}]: ${message}`;
+
     if (Object.keys(meta).length > 0) {
-      msg += ` ${JSON.stringify(meta)}`;
+      // Jika meta adalah Error
+      if (meta instanceof Error) {
+        msg +=
+          " " +
+          safeStringify({
+            message: meta.message,
+            stack: meta.stack,
+            name: meta.name,
+            code: meta.code,
+          });
+      } else {
+        msg += " " + safeStringify(meta);
+      }
     }
+
     return msg;
   })
 );
 
-// Create logger instance
+// JSON file format (tetap aman)
+const logFormat = winston.format.combine(
+  winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
+  winston.format.errors({ stack: true }),
+  winston.format.splat(),
+  // pakai safeStringify untuk keamanan
+  winston.format((info) => {
+    if (info instanceof Error) {
+      info.message = info.message;
+      info.stack = info.stack;
+    }
+    // hindari crash saat stringify metadata
+    info.meta = info.meta ? safeStringify(info.meta) : undefined;
+    return info;
+  })(),
+  winston.format.json()
+);
+
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || "info",
   format: logFormat,
   defaultMeta: { service: "sivalidrg-backend" },
   transports: [
-    // Write all logs to combined.log
     new winston.transports.File({
       filename: path.join(logDir, "combined.log"),
-      maxsize: 5242880, // 5MB
+      maxsize: 5242880,
       maxFiles: 5,
     }),
-    // Write errors to error.log
     new winston.transports.File({
       filename: path.join(logDir, "error.log"),
       level: "error",

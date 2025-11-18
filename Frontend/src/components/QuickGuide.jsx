@@ -233,7 +233,7 @@ export default function QuickGuide({ open, onClose }) {
             <List dense>
               <ListItem sx={{ py: 0 }}>
                 <ListItemText
-                  primary="Dokumen застрял > 10 menit"
+                  primary="Dokumen stuck > 10 menit"
                   secondary="Gunakan 'Reprocess' dengan force option"
                   primaryTypographyProps={{ variant: "body2", fontWeight: 600 }}
                   secondaryTypographyProps={{ variant: "caption" }}

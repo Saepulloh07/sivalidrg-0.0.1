@@ -230,13 +230,7 @@ export default function Login() {
             </Typography>
             <Box component="ul" sx={{ m: 0, pl: 2 }}>
               <Typography component="li" variant="body2">
-                Admin: <strong>admin</strong> / admin123
-              </Typography>
-              <Typography component="li" variant="body2">
-                Coder: <strong>coder01</strong> / coder123
-              </Typography>
-              <Typography component="li" variant="body2">
-                Reviewer: <strong>reviewer01</strong> / reviewer123
+                Admin: <strong>NIP001</strong> / admin123
               </Typography>
             </Box>
           </Box>

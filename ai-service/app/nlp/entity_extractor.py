@@ -1,4 +1,4 @@
-# app/nlp/entity_extractor.py
+# app/nlp/entity_extractor.py - FIXED VERSION
 from app.utils.ollama_client import OllamaClient
 from app.nlp.preprocessor import clean_text
 from typing import List, Dict
@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 def extract_entities(raw_text: str) -> List[Dict]:
     """
     Ekstraksi diagnosis dan prosedur medis dari teks menggunakan LLM.
-    FIXED: Better error handling and prompt engineering.
+    FIXED: Simplified prompt untuk better JSON output.
     """
     if not raw_text or not raw_text.strip():
         logger.warning("Empty raw_text provided")
@@ -23,10 +23,10 @@ def extract_entities(raw_text: str) -> List[Dict]:
         logger.warning("Text cleaning resulted in empty string")
         return []
     
-    # Truncate if too long (keep first 2000 chars for context)
-    if len(clean) > 2000:
-        logger.warning(f"Text too long ({len(clean)} chars), truncating to 2000")
-        clean = clean[:2000] + "..."
+    # Truncate if too long
+    if len(clean) > 1500:
+        logger.warning(f"Text too long ({len(clean)} chars), truncating to 1500")
+        clean = clean[:1500]
     
     # Initialize Ollama client
     client = OllamaClient()
@@ -39,7 +39,7 @@ def extract_entities(raw_text: str) -> List[Dict]:
             "Pastikan Ollama running: 'ollama serve'"
         )
     
-    # Build optimized prompt
+    # Build simplified prompt
     prompt = _build_extraction_prompt(clean)
     
     # Execute inference with error handling
@@ -48,7 +48,6 @@ def extract_entities(raw_text: str) -> List[Dict]:
         
         if not entities:
             logger.warning("No entities extracted from text")
-            # Return empty instead of failing
             return []
         
         logger.info(f"✓ Extracted {len(entities)} entities")
@@ -64,33 +63,27 @@ def extract_entities(raw_text: str) -> List[Dict]:
 
 def _build_extraction_prompt(clean_text: str) -> str:
     """
-    FIXED: Simplified and more explicit prompt for better JSON output.
+    FIXED: Ultra-simplified prompt untuk maximize JSON compliance.
     """
     
-    prompt = f"""Ekstrak SEMUA diagnosis dan prosedur medis dari teks ringkasan pulang berikut.
-
-TEKS RINGKASAN PULANG:
+    prompt = f"""TEKS MEDIS:
 {clean_text}
 
-INSTRUKSI:
-1. Identifikasi semua diagnosis (penyakit/kondisi medis)
-2. Identifikasi semua prosedur (tindakan medis/operasi)
-3. Gunakan terminologi medis yang lengkap dan spesifik
-4. Format output HARUS JSON array seperti contoh di bawah
+TUGAS: Ekstrak diagnosis dan prosedur medis.
 
-CONTOH OUTPUT:
+FORMAT OUTPUT (wajib JSON array):
 [
-  {{"tipe": "diagnosis", "deskripsi": "diabetes mellitus tipe 2 tidak terkontrol"}},
-  {{"tipe": "diagnosis", "deskripsi": "hipertensi stage 2"}},
-  {{"tipe": "procedure", "deskripsi": "sectio caesarea emergency"}}
+  {{"tipe":"diagnosis","deskripsi":"Diabetes melitus tipe 2 spesifik"}},
+  {{"tipe":"procedure","deskripsi":"pemeriksaan tekanan darah"}}
 ]
 
-PENTING:
-- Hanya output JSON array, tanpa teks lain
-- Jika tidak ada entitas, output: []
-- Setiap entitas harus punya "tipe" dan "deskripsi"
-- "tipe" hanya boleh "diagnosis" atau "procedure"
-"""
+ATURAN:
+- Output HANYA JSON array
+- Tidak boleh ada teks lain
+- "tipe" hanya "diagnosis" atau "procedure"
+- Jika tidak ada: []
+
+JSON:"""
     
     return prompt
 
@@ -98,14 +91,19 @@ PENTING:
 def validate_extracted_entities(entities: List[Dict]) -> List[Dict]:
     """
     Validasi tambahan untuk memastikan kualitas entities.
-    FIXED: Better duplicate detection and cleaning.
     """
+    if not entities or not isinstance(entities, list):
+        return []
+    
     validated = []
     seen_descriptions = set()
     
     for ent in entities:
         # Skip if invalid structure
-        if not isinstance(ent, dict) or 'tipe' not in ent or 'deskripsi' not in ent:
+        if not isinstance(ent, dict):
+            continue
+        
+        if 'tipe' not in ent or 'deskripsi' not in ent:
             continue
         
         tipe = str(ent['tipe']).lower().strip()
@@ -116,9 +114,9 @@ def validate_extracted_entities(entities: List[Dict]) -> List[Dict]:
             logger.warning(f"Invalid tipe '{tipe}' for entity: {deskripsi}")
             continue
         
-        # Validate deskripsi length and content
-        if len(deskripsi) < 3:
-            logger.warning(f"Deskripsi too short: {deskripsi}")
+        # Validate deskripsi
+        if len(deskripsi) < 3 or len(deskripsi) > 500:
+            logger.warning(f"Invalid deskripsi length: {len(deskripsi)}")
             continue
         
         # Normalize for duplicate detection
@@ -132,9 +130,9 @@ def validate_extracted_entities(entities: List[Dict]) -> List[Dict]:
         seen_descriptions.add(normalized_desc)
         
         # Clean up description
-        # Remove common artifacts
-        cleaned_desc = deskripsi.replace('\n', ' ').replace('\r', '')
-        cleaned_desc = ' '.join(cleaned_desc.split())  # Normalize whitespace
+        import re
+        cleaned_desc = re.sub(r'\s+', ' ', deskripsi)
+        cleaned_desc = cleaned_desc.strip()
         
         if len(cleaned_desc) < 3:
             continue

@@ -103,7 +103,7 @@ export default function Documents() {
 
       if (!status.can_process) {
         if (status.is_stuck) {
-          if (window.confirm("Document застрял. Force reprocess?")) {
+          if (window.confirm("Document stuck. Force reprocess?")) {
             await codingAPI.reprocessDocument(documentId, true, true);
           }
         } else {

@@ -1,18 +1,16 @@
-// services/api.js
+// services/api.js - COMPLETE MODIFIED VERSION
 import axios from "axios";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8001";
 
-// Create axios instance
 const apiClient = axios.create({
   baseURL: API_URL,
-  timeout: 120000, // 2 minutes for long operations
+  timeout: 120000,
   headers: {
     "Content-Type": "application/json",
   },
 });
 
-// Helper function to get token from storage
 const getAuthToken = () => {
   try {
     const authData = localStorage.getItem("auth-storage");
@@ -34,7 +32,6 @@ const getAuthToken = () => {
   }
 };
 
-// Request interceptor
 apiClient.interceptors.request.use(
   (config) => {
     const token = getAuthToken();
@@ -46,7 +43,6 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -97,7 +93,7 @@ export const documentsAPI = {
   checkStatus: (id) => apiClient.get(`/api/coding/documents/${id}/status`),
 };
 
-// ============= CODING API =============
+// ============= CODING API (MODIFIED) =============
 export const codingAPI = {
   getCases: (params) => apiClient.get("/api/coding/cases", { params }),
   getCaseById: (id) => apiClient.get(`/api/coding/cases/${id}`),
@@ -107,17 +103,25 @@ export const codingAPI = {
   updateCode: (caseId, codeId, data) =>
     apiClient.put(`/api/coding/cases/${caseId}/codes/${codeId}`, data),
 
-  // Updated endpoints
-  runInference: (documentId, runValidation = true) =>
+  // MODIFIED: Added skip_icd_matching parameter
+  runInference: (documentId, runValidation = true, skipIcdMatching = false) =>
     apiClient.post("/api/coding/infer", {
       document_id: documentId,
       run_validation: runValidation,
+      skip_icd_matching: skipIcdMatching,
     }),
 
-  reprocessDocument: (documentId, runValidation = true, force = false) =>
+  // MODIFIED: Added skip_icd_matching parameter
+  reprocessDocument: (
+    documentId,
+    runValidation = true,
+    force = false,
+    skipIcdMatching = false
+  ) =>
     apiClient.post(`/api/coding/infer/reprocess${force ? "?force=true" : ""}`, {
       document_id: documentId,
       run_validation: runValidation,
+      skip_icd_matching: skipIcdMatching,
     }),
 
   checkDocumentStatus: (documentId) =>
